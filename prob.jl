@@ -100,15 +100,27 @@ type GoodTuringSmooth <: Smoother
     freq::Counter
     interpolater::Function
 end
-GoodTuringSmooth(x::Counter) = GoodTuringSmooth(x, identity)
-rStar(x::GoodTuringSmooth, r) = (r+1) * interpolater(r+1) / interpolater(r)
-prob(x::GoodTuringSmooth, obs) = (haskey(x.freq, obs) ? rStar : hapax(x.freq)) / x.freq.tokens
+GoodTuringSmooth(x::Counter) = GoodTuringSmooth(x, y->count(z->x[z]==y, keys(x)) )
+rStar(x::GoodTuringSmooth, r::Int) = (r+1) * x.interpolater(r+1) / x.interpolater(r)
+prob(x::GoodTuringSmooth, obs) = (haskey(x.freq, obs) ? rStar(x, x.freq[obs]) : length(collect(hapax(x.freq)))) / x.freq.tokens
 
 type SimpleGoodTuringSmooth <: Smoother
     freq::Counter
-    a::Real
-    b::Real
+    interpolater::Function
+    renorm::Real
 end
+
 function SimpleGoodTuringSmooth(xs::Counter)
     rank, Ns = zip(enumerate(reverse(sort(collect(values(xs)))))...)
+    Ns = map(log, Ns)
+    rank = map(log, rank)
+    a, b = linreg([rank...], [Ns...])
+    interpolater(r) = a * (r^b)
+    pd = SimpleGoodTuringSmooth(xs, interpolater, 1)
+    pd.renorm = mass(pd)
+    return pd
 end
+rStar(x::SimpleGoodTuringSmooth, r::Int) = (r+1)*x.interpolater(r+1) / x.interpolater(r)
+prob(x::SimpleGoodTuringSmooth, obs) = (haskey(x.freq, obs) ? rStar(x, x.freq[obs]) : length([hapax(x.freq)...])) / (x.freq.tokens * x.renorm)
+
+
